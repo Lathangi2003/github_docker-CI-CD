@@ -8,7 +8,7 @@ on:
 
 # ---------- Define variables once (replace dummy values) ----------
 env:
-  AWS_REGION: ap-south-1                 # ECR Public auth region (must be us-east-1)
+  AWS_REGION: us-east-1                 # ECR Public auth region (must be us-east-1)
   ECR_REGISTRY: public.ecr.aws          # ECR Public registry host
   ECR_REPOSITORY: e8k8i3u3/ltimindtree  # <namespace>/<repo> in ECR Public
   IMAGE_TAG: latest                     # or use ${{ github.sha }} for immutable tags
