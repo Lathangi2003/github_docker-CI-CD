@@ -1,13 +1,18 @@
 
-name: Build WAR and Push Docker Image to ECR
+name: Build WAR and Push Docker Image to ECR (Public)
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "master" ]
   workflow_dispatch:
 
+# ---------- Define variables once (replace dummy values) ----------
 env:
-  IMAGE_TAG: latest
+  AWS_REGION: ap-south-1                 # ECR Public auth region (must be us-east-1)
+  ECR_REGISTRY: public.ecr.aws          # ECR Public registry host
+  ECR_REPOSITORY: e8k8i3u3/ltimindtree  # <namespace>/<repo> in ECR Public
+  IMAGE_TAG: latest                     # or use ${{ github.sha }} for immutable tags
+# -----------------------------------------------------------------
 
 jobs:
   build-and-push:
@@ -25,26 +30,31 @@ jobs:
         run: ./build.sh
         # Ensure ROOT.war is at repo root or update Dockerfile COPY path
 
-      - name: Debug secrets (check for whitespace)
+      - name: Debug variables (optional)
         run: |
-          echo "REGISTRY="public.ecr.aws/e8k8i3u3/ltimindtree"
-          echo "REPOSITORY="ltimindtree"
-          echo "REGION="ap-south-1"
+          echo "REGISTRY=[${ECR_REGISTRY}]"
+          echo "REPOSITORY=[${ECR_REPOSITORY}]"
+          echo "REGION=[${AWS_REGION}]"
+          echo "IMAGE_TAG=[${IMAGE_TAG}]"
 
-      - name: Login to Amazon ECR
+      - name: Login to Amazon ECR Public
         run: |
-          aws ecr get-login-password --region "${{ secrets.AWS_REGION }}" | \
-          docker login --username AWS --password-stdin "${{ secrets.ECR_REGISTRY }}"
+          # ECR Public login always targets public.ecr.aws and us-east-1
+          aws ecr-public get-login-password --region "$AWS_REGION" | \
+          docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
-      - name: Build Docker image (Tomcat + WAR) with full ECR name
+      - name: Build Docker image (Tomcat + WAR) with full ECR Public name
         run: |
-          docker build -t "${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${IMAGE_TAG}" .
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          docker build -t "$IMAGE_URI" .
 
-      - name: Push image to ECR
+      - name: Push image to ECR Public
         run: |
-          docker push "${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${IMAGE_TAG}"
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          docker push "$IMAGE_URI"
 
       - name: Remove old container and run new one
         run: |
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
           docker rm -f tomcat-app || true
-          docker run -d --name tomcat-app -p 8080:8080 "${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${IMAGE_TAG}"
+          docker run -d --name tomcat-app -p 8080:8080 "$IMAGE_URI"
