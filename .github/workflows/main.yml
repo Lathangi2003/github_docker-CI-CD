@@ -8,7 +8,7 @@ on:
 
 env:
   PUBLIC_ECR_URI: public.ecr.aws/e8k8i3u3/ltimindtree
-  AWS_REGION: ${{ secrets.AWS_REGION }}   # for ECR Public login (commonly us-east-1)
+  AWS_REGION: ${{ secrets.AWS_REGION }}   # for ECR Public login, commonly us-east-1
 
 jobs:
   deploy:
@@ -42,25 +42,14 @@ jobs:
           docker tag $PUBLIC_ECR_URI:${GITHUB_SHA} $PUBLIC_ECR_URI:latest
           docker push $PUBLIC_ECR_URI:latest
 
-      - name: SSH Deploy to Ubuntu EC2
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          script: |
-            # Ensure Docker is installed
-            if ! command -v docker >/dev/null 2>&1; then
-              sudo apt-get update -y
-              sudo apt-get install -y docker.io
-              sudo systemctl enable docker
-              sudo systemctl start docker
-            fi
+      - name: Run container on the runner (EC2)
+        run: |
+          # Ensure Docker is running
+          sudo systemctl start docker || true
 
-            docker pull $PUBLIC_ECR_URI:latest
-            docker rm -f tomcat || true
-            docker run -d --name tomcat -p 8080:8080 $PUBLIC_ECR_URI:latest
+          docker pull $PUBLIC_ECR_URI:latest
+          docker rm -f tomcat || true
+          docker run -d --name tomcat -p 8080:8080 $PUBLIC_ECR_URI:latest
 
-            # Quick status
-            docker ps --filter "name=tomcat"
-
+          # Quick status
+          docker ps --filter "name=tomcat"
