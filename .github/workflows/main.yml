@@ -53,8 +53,21 @@ jobs:
           IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
           docker push "$IMAGE_URI"
 
+      
       - name: Remove old container and run new one
         run: |
           IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
-          docker rm -f tomcat-app || true
+      
+          # Login to ECR (requires AWS credentials & AWS_REGION to be set in the environment)
+          aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+      
+          # Pull the latest image
+          docker pull "$IMAGE_URI"
+      
+          # Remove existing container if present
+          if [ "$(docker ps -aq -f name=tomcat-app)" ]; then
+            docker rm -f tomcat-app
+          fi
+      
+          # Run new container
           docker run -d --name tomcat-app -p 8080:8080 "$IMAGE_URI"
