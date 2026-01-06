@@ -1,0 +1,70 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  PUBLIC_ECR_URI: public.ecr.aws/e8k8i3u3/ltimindtree
+  # ECR Public authentication endpoint is in us-east-1
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Maven (if missing)
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y maven
+
+      - name: Build WAR
+        run: |
+          chmod +x build.sh
+          ./build.sh
+
+      - name: Configure AWS credentials (for ECR Public push)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR Public
+        run: |
+          aws ecr-public get-login-password --region $AWS_REGION | \
+          docker login --username AWS --password-stdin public.ecr.aws
+
+      - name: Build & Push Image
+        run: |
+          docker build -t $PUBLIC_ECR_URI:${GITHUB_SHA} .
+          docker push $PUBLIC_ECR_URI:${GITHUB_SHA}
+          docker tag $PUBLIC_ECR_URI:${GITHUB_SHA} $PUBLIC_ECR_URI:latest
+          docker push $PUBLIC_ECR_URI:latest
+
+      - name: SSH Deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            # Ensure Docker is installed and running on Ubuntu EC2
+            if ! command -v docker >/dev/null 2>&1; then
+              sudo apt-get update -y
+              sudo apt-get install -y docker.io
+              sudo systemctl enable docker
+              sudo systemctl start docker
+            fi
+
+            docker pull $PUBLIC_ECR_URI:latest
+            docker rm -f tomcat || true
+            docker run -d --name tomcat -p 8080:8080 $PUBLIC_ECR_URI:latest
+
+            # Optional: quick health check
+            sleep 3
+            docker ps --filter "name=tomcat"
