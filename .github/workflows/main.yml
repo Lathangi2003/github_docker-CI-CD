@@ -8,11 +8,11 @@ on:
 
 env:
   PUBLIC_ECR_URI: public.ecr.aws/e8k8i3u3/ltimindtree
-  AWS_REGION: ${{ secrets.AWS_REGION }}   # for ECR Public login, commonly us-east-1
 
 jobs:
   deploy:
     runs-on: [ self-hosted, dev ]
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,11 +28,11 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: us-east-1   # or use ${{ secrets.AWS_REGION }} if you prefer
 
       - name: Login to ECR Public
         run: |
-          aws ecr-public get-login-password --region $AWS_REGION | \
+          aws ecr-public get-login-password --region us-east-1 | \
           docker login --username AWS --password-stdin public.ecr.aws
 
       - name: Build & Push Image
@@ -42,14 +42,10 @@ jobs:
           docker tag $PUBLIC_ECR_URI:${GITHUB_SHA} $PUBLIC_ECR_URI:latest
           docker push $PUBLIC_ECR_URI:latest
 
-      - name: Run container on the runner (EC2)
+      - name: Run container locally on the runner (EC2)
         run: |
-          # Ensure Docker is running
           sudo systemctl start docker || true
-
           docker pull $PUBLIC_ECR_URI:latest
           docker rm -f tomcat || true
           docker run -d --name tomcat -p 8080:8080 $PUBLIC_ECR_URI:latest
-
-          # Quick status
           docker ps --filter "name=tomcat"
