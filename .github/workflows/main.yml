@@ -1,64 +1,50 @@
-name: Build & Deploy
+
+name: Build WAR and Push Docker Image to ECR
 
 on:
   push:
-    branches: [ "master" ]   # change to "main" if your default branch is main
+    branches: [ "main" ]
   workflow_dispatch:
 
 env:
-  PUBLIC_ECR_URI: public.ecr.aws/e8k8i3u3/ltimindtree
+  IMAGE_TAG: latest
 
 jobs:
-  deploy:
+  build-and-push:
     runs-on: [ self-hosted, dev ]
+    environment: ECR Secrets
 
     steps:
-      - name: Checkout
+      - name: Checkout source code
         uses: actions/checkout@v4
 
-      - name: Build WAR using project script
+      - name: Make build.sh executable
+        run: chmod +x build.sh
+
+      - name: Build WAR
+        run: ./build.sh
+        # Ensure ROOT.war is at repo root or update Dockerfile COPY path
+
+      - name: Debug secrets (check for whitespace)
         run: |
-          chmod +x build.sh
-          ./build.sh
-          test -f ROOT.war && echo "WAR ready" || (echo "ROOT.war not found" && exit 1)
+          echo "REGISTRY=[${{ secrets.ECR_REGISTRY }}]"
+          echo "REPOSITORY=[${{ secrets.ECR_REPOSITORY }}]"
+          echo "REGION=[${{ secrets.AWS_REGION }}]"
 
-      - name: Install AWS CLI v2 (if missing)
+      - name: Login to Amazon ECR
         run: |
-          if ! command -v aws >/dev/null 2>&1; then
-            sudo apt-get update -y
-            sudo apt-get install -y unzip curl
-            curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-            unzip -q awscliv2.zip
-            sudo ./aws/install
-            rm -rf aws awscliv2.zip
-          fi
-          aws --version
+          aws ecr get-login-password --region "${{ secrets.AWS_REGION }}" | \
+          docker login --username AWS --password-stdin "${{ secrets.ECR_REGISTRY }}"
 
-      - name: Configure AWS credentials (for ECR Public push)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1   # ECR Public auth endpoint region
-
-      - name: Login to ECR Public
+      - name: Build Docker image (Tomcat + WAR) with full ECR name
         run: |
-          aws ecr-public get-login-password --region us-east-1 | \
-          docker login --username AWS --password-stdin public.ecr.aws
+          docker build -t "${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${IMAGE_TAG}" .
 
-      - name: Build & Push Image
+      - name: Push image to ECR
         run: |
-          docker build -t $PUBLIC_ECR_URI:${GITHUB_SHA} .
-          docker push $PUBLIC_ECR_URI:${GITHUB_SHA}
-          docker tag $PUBLIC_ECR_URI:${GITHUB_SHA} $PUBLIC_ECR_URI:latest
-          docker push $PUBLIC_ECR_URI:latest
+          docker push "${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${IMAGE_TAG}"
 
-      - name: Run container locally on the runner (EC2)
+      - name: Remove old container and run new one
         run: |
-          sudo systemctl start docker || true
-          docker pull $PUBLIC_ECR_URI:latest
-          docker rm -f tomcat || true
-          docker run -d --name tomcat -p 8080:8080 $PUBLIC_ECR_URI:latest
-          docker ps --filter "name=tomcat"
-
-
+          docker rm -f tomcat-app || true
+          docker run -d --name tomcat-app -p 8080:8080 "${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${IMAGE_TAG}"
