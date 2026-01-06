@@ -3,12 +3,11 @@ name: Build WAR and Push Docker Image to ECR
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "main" ]
   workflow_dispatch:
 
 env:
   IMAGE_TAG: latest
-
 
 jobs:
   build-and-push:
@@ -28,13 +27,15 @@ jobs:
 
       - name: Debug secrets (check for whitespace)
         run: |
-          echo "REGISTRY=[${{ secrets.ECR_REGISTRY }}]"
-          echo "REPOSITORY=[${{ secrets.ECR_REPOSITORY }}]"
-          echo "REGION=[${{ secrets.AWS_REGION }}]"
+          echo "REGISTRY="public.ecr.aws/e8k8i3u3/ltimindtree"
+          echo "REPOSITORY="ltimindtree"
+          echo "REGION="ap-south-1"
 
       - name: Login to Amazon ECR
         run: |
-          aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws/e8k8i3u3
+          aws ecr get-login-password --region "${{ secrets.AWS_REGION }}" | \
+          docker login --username AWS --password-stdin "${{ secrets.ECR_REGISTRY }}"
+
       - name: Build Docker image (Tomcat + WAR) with full ECR name
         run: |
           docker build -t "${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${IMAGE_TAG}" .
