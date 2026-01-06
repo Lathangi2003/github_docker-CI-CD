@@ -1,14 +1,14 @@
+
 name: Build & Deploy
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "master" ]   # change to "main" if your default branch is main
   workflow_dispatch:
 
 env:
   PUBLIC_ECR_URI: public.ecr.aws/e8k8i3u3/ltimindtree
-  # ECR Public authentication endpoint is in us-east-1
-  AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_REGION: ${{ secrets.AWS_REGION }}   # for ECR Public login (commonly us-east-1)
 
 jobs:
   deploy:
@@ -17,15 +17,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Maven (if missing)
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y maven
-
-      - name: Build WAR
+      - name: Build WAR using project script
         run: |
           chmod +x build.sh
           ./build.sh
+          test -f ROOT.war && echo "WAR ready" || (echo "ROOT.war not found" && exit 1)
 
       - name: Configure AWS credentials (for ECR Public push)
         uses: aws-actions/configure-aws-credentials@v4
@@ -46,14 +42,14 @@ jobs:
           docker tag $PUBLIC_ECR_URI:${GITHUB_SHA} $PUBLIC_ECR_URI:latest
           docker push $PUBLIC_ECR_URI:latest
 
-      - name: SSH Deploy
+      - name: SSH Deploy to Ubuntu EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            # Ensure Docker is installed and running on Ubuntu EC2
+            # Ensure Docker is installed
             if ! command -v docker >/dev/null 2>&1; then
               sudo apt-get update -y
               sudo apt-get install -y docker.io
@@ -65,6 +61,6 @@ jobs:
             docker rm -f tomcat || true
             docker run -d --name tomcat -p 8080:8080 $PUBLIC_ECR_URI:latest
 
-            # Optional: quick health check
-            sleep 3
+            # Quick status
             docker ps --filter "name=tomcat"
+
